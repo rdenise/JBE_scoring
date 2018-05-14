@@ -66,7 +66,7 @@ def beautify_h1(message) :
 ##########################################################################################
 
 
-def grab_spreadsheet_info(URL, names_columns, all_register_email) :
+def grab_spreadsheet_info(URL, names_columns, all_register_email, check) :
     
     """
 	Function that will grab all the informations about all the google spreadsheet link to the google form
@@ -96,10 +96,11 @@ def grab_spreadsheet_info(URL, names_columns, all_register_email) :
     voting = voting.iloc[:,1:]
     
     # Remove not good mail address
-    voting = voting[voting['Email Address'].isin(all_register.Email)]
-    
+    if check :
+    	voting = voting[voting['Adresse e-mail'].isin(all_register.Email)]
+
     # Changing the index by the mail addresses
-    voting.set_index("Email Address", inplace=True)
+    voting.set_index("Adresse e-mail", inplace=True)
     
     # Be sure to have only number 
     voting = voting.replace("5 (Excellent)", 5) # Poster max
@@ -108,12 +109,14 @@ def grab_spreadsheet_info(URL, names_columns, all_register_email) :
     
     voting.columns = names_columns
     
+    voting = voting.astype("float64")
+
     return voting
 
 ##########################################################################################
 ##########################################################################################
 
-def merge_results(allRegister, csvInput, number) :
+def merge_results(allRegister, csvInput, number, check) :
     
     """
 	Function that will merge the information of all the google spreadsheet of votes into one for talk and the other for poster
@@ -128,16 +131,17 @@ def merge_results(allRegister, csvInput, number) :
 	:rtype: pandas.DataFrame
     """
     
-    df_Talk = pd.DataFrame(index=allRegister.Email)
-    df_Poster = pd.DataFrame(index=allRegister.Email)
+    #df_Poster = pd.DataFrame(index=allRegister.Email)
     
     for index, subtab in csvInput.iterrows() :
-        tmp_df = grab_spreadsheet_info(subtab.Speadsheet_url, str(subtab.Names_talk).split(";") + str(subtab.Names_poster).split(";"), allRegister.Email)
+        tmp_df = grab_spreadsheet_info(subtab.Speadsheet_url, str(subtab.Names_poster).split(";"), allRegister.Email, check)
         
-        # Verify to get the columns with only 5 votes
+        # Verify to get the columns with only 3 votes
         tmp_df.loc[:,tmp_df.apply(lambda x : True if x[~x.isna()].shape[0] >= number else False, axis=0)]
+
+        tmp_df = tmp_df.groupby(level="Adresse e-mail").mean()
         
-        df_Poster = pd.concat([df_Poster, tmp_df], axis=1)
+        df_Poster = tmp_df
     
     return df_Poster
 
@@ -145,7 +149,7 @@ def merge_results(allRegister, csvInput, number) :
 ##########################################################################################
 ##########################################################################################
 
-def winners_pdf(winner_Talk, winner_Poster, folder, backgroung_template, name, fontsize=12, figsize=[8, 12]):
+def winners_pdf(winner_Poster1, winner_Poster2, folder, backgroung_template, name, fontsize=12, figsize=[8, 12]):
 
 	"""
     Function that will create the pdf file with the names of the winner
@@ -173,10 +177,10 @@ def winners_pdf(winner_Talk, winner_Poster, folder, backgroung_template, name, f
 	plt.imshow(f, aspect="auto") 
 
 	# To write the text
-	plt.text(0.065, 0.7, 'The winner for the talks :', ha='left', va='center', transform=ax.transAxes, fontsize=fontsize)
-	plt.text(0.5, 0.65, '{}'.format(winner_Talk), ha='center', va='center', transform=ax.transAxes,fontsize=fontsize)
-	plt.text(0.065, 0.5, 'The winner for the poster :', ha='left', va='center', transform=ax.transAxes, fontsize=fontsize)
-	plt.text(0.5, 0.45, '{}'.format(winner_Poster), ha='center', va='center', transform=ax.transAxes, fontsize=fontsize)
+	plt.text(0.065, 0.7, 'The 1st winner for the posters :', ha='left', va='center', transform=ax.transAxes, fontsize=fontsize)
+	plt.text(0.5, 0.65, '{}'.format(winner_Poster1), ha='center', va='center', transform=ax.transAxes,fontsize=fontsize)
+	plt.text(0.065, 0.5, 'The 2nd winner for the poster :', ha='left', va='center', transform=ax.transAxes, fontsize=fontsize)
+	plt.text(0.5, 0.45, '{}'.format(winner_Poster2), ha='center', va='center', transform=ax.transAxes, fontsize=fontsize)
 
 	a = plt.gca()
 	a.get_xaxis().set_visible(False) # We don't need axis ticks
@@ -193,7 +197,7 @@ def winners_pdf(winner_Talk, winner_Poster, folder, backgroung_template, name, f
 ##########################################################################################
 
 
-def compute_score(df_Poster, folder, backgroung_template, FlashTalks) :
+def compute_score(flash_talk, df_Poster, folder, backgroung_template, FlashTalks) :
     
     """
     Function that will compute the mean (could be change) to find the winner
@@ -210,18 +214,24 @@ def compute_score(df_Poster, folder, backgroung_template, FlashTalks) :
     """
     
     score_Poster = df_Poster.mean(axis=0).sort_values()
+
     score_Poster.to_csv(os.path.join(folder, "Results_Poster_JBE{}_{}.txt".format(time.strftime("%Y"), time.strftime("%Y%m%d"))), sep="\t")
-    winner_Poster = " and ".join([" ".join(score_Poster[score_Poster.ID_poster == IDPoster].loc[:,["First name", "Last name"]].tolist()) for IDPoster in score_Poster[score_Poster == score_Poster.max()].index.tolist()])
+    #print([flash_talk[flash_talk.ID_poster == IDPoster].loc[:,["First name", "Last name"]].values[0].tolist() for IDPoster in score_Poster[score_Poster == score_Poster.max()].index.tolist()])
+    winner_Poster1 = " and ".join([" ".join(flash_talk[flash_talk.ID_poster == IDPoster].loc[:,["First name", "Last name"]].values[0].tolist()) for IDPoster in score_Poster[score_Poster == score_Poster.max()].index.tolist()])
+
+    score_Poster = score_Poster[[IDPoster for IDPoster in score_Poster[score_Poster != score_Poster.max()].index.tolist()]]
+    winner_Poster2 = " and ".join([" ".join(flash_talk[flash_talk.ID_poster == IDPoster].loc[:,["First name", "Last name"]].values[0].tolist()) for IDPoster in score_Poster[score_Poster == score_Poster.max()].index.tolist()])
 
     beautify_h1("Poster")
-    print("The name of the winner for JBE{} : {}".format(time.strftime("%Y"), winner_Poster))
+    print("The name of the 1st winner for JBE{} poster : {}".format(time.strftime("%Y"), winner_Poster1))
+    print("The name of the 2nd winner for JBE{} poster : {}".format(time.strftime("%Y"), winner_Poster2))
 
     # For the page
-    winners_pdf(winner_Talk, winner_Poster, folder, backgroung_template, name="Winner_JBE{}_{}.pdf".format(time.strftime("%Y"), time.strftime("%Y%m%d")))
+    winners_pdf(winner_Poster1, winner_Poster2, folder, backgroung_template, name="Winner_JBE{}_{}.pdf".format(time.strftime("%Y"), time.strftime("%Y%m%d")))
     
 
    	# For the slide
-    winners_pdf(winner_Talk, winner_Poster, folder, backgroung_template, name="Winner_slide_JBE{}_{}.pdf".format(time.strftime("%Y"), time.strftime("%Y%m%d")), figsize=[16, 9])
+    winners_pdf(winner_Poster1, winner_Poster2, folder, backgroung_template, name="Winner_slide_JBE{}_{}.pdf".format(time.strftime("%Y"), time.strftime("%Y%m%d")), figsize=[16, 9])
     
     return
 
@@ -276,6 +286,12 @@ general_option.add_argument("-min",'--minimum_votes',
 							dest="minimum_votes",
 							metavar='<INT>',
 							help="Minimal number of vote to stay in the competition")
+general_option.add_argument("-check",'--check_email',
+ 							action='store_true',	
+ 							default=False,
+							dest="check_email",
+							help="Allow the reduction of the answer on the email address from the registration form")
+
 
 args = parser.parse_args()
 
@@ -321,7 +337,7 @@ all_register = response.text
 all_register = pd.read_csv(StringIO(all_register))
 
 # We take the informations to convert the name of the winner
-response = requests.get("{}/export?format=csv&gid={}".format(csv_input.iloc[0].Speadsheet_url, csv_input.iloc[0].gid))
+response = requests.get("{}/export?format=csv&gid={}".format(csv_input.iloc[1].Speadsheet_url, csv_input.iloc[1].gid))
 response.encoding = "utf-8"
 flash_talk = response.text
 flash_talk = pd.read_csv(StringIO(flash_talk))
@@ -329,7 +345,7 @@ flash_talk = pd.read_csv(StringIO(flash_talk))
 # We split the dataframe with only the google spreadsheets of the votes
 csv_input = csv_input.iloc[2:,:]
 
-dfPoster = merge_results(all_register,csv_input, int(args.minimum_votes))
+dfPoster = merge_results(all_register,csv_input, int(args.minimum_votes), args.check_email)
 
-compute_score(dfPoster, OUTPUT, TEMPLATE, flash_talk)
+compute_score(flash_talk, dfPoster, OUTPUT, TEMPLATE, flash_talk)
 
